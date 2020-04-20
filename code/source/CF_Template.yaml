@@ -1,0 +1,373 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  
+#   Licensed under the Apache License, Version 2.0 (the "License").
+#   You may not use this file except in compliance with the License.
+#   A copy of the License is located at
+  
+#       http://www.apache.org/licenses/LICENSE-2.0
+  
+#   or in the "license" file accompanying this file. This file is distributed 
+#   on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either 
+#   express or implied. See the License for the specific language governing 
+#   permissions and limitations under the License.
+
+
+
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  VeevaDomainNameParameter: 
+    Type: String
+    Description: Enter Veeva domain name you want to connect to.
+    MaxLength: 30
+    MinLength: 3
+
+  VeevaDomainUserNameParameter:
+    Type: String
+    Description: Enter the user name of the domain.
+    MaxLength: 30
+    MinLength: 3
+
+  VeevaDomainPasswordParameter:
+    Type: String
+    Description: Enter the password for the domain.
+    MaxLength: 30
+    MinLength: 3
+    NoEcho: True
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Veeva Configuration"
+        Parameters: 
+          - VeevaDomainNameParameter
+          - VeevaDomainUserNameParameter
+          - VeevaDomainPasswordParameter
+    ParameterLabels: 
+      VeevaDomainNameParameter: 
+        default: "Which Veeva domain should this connect to?"
+      VeevaDomainUserNameParameter: 
+        default: "What Veeva username should be used?"
+      VeevaDomainPasswordParameter: 
+        default: "What Veeva password should be used?"
+
+Resources:
+  AVAIBucket:
+    Type: AWS::S3::Bucket 
+  
+  AVAIPollerRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -  
+            Effect: "Allow"
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: "ReadWriteToS3"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: "S3:PutObject"
+                Resource: !Sub
+                  - ${bucketARN}/*
+                  - { bucketARN : !GetAtt AVAIBucket.Arn}
+              - 
+                Effect: "Allow"
+                Action: "S3:GetObject"
+                Resource: !Sub
+                  - ${bucketARN}/*
+                  - { bucketARN : !GetAtt AVAIBucket.Arn}
+        -  
+          PolicyName: "WritetoSQS"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "sqs:SendMessage"
+                  - "sqs:GetQueueUrl"
+                Resource: !GetAtt AVAIQueue.Arn
+      
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  AVAIQueuePollerRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -  
+            Effect: "Allow"
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: "ReadWriteToS3"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "S3:GetObject"
+                  - "S3:DeleteObject"
+                  - "S3:PutObject"
+                Resource: !Sub
+                  - ${bucketARN}/*
+                  - { bucketARN : !GetAtt AVAIBucket.Arn}
+        -  
+          PolicyName: "ReadDeletetoSQS"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "sqs:DeleteMessage"
+                  - "sqs:ReceiveMessage"
+                  - "sqs:GetQueueUrl"
+                Resource: !GetAtt AVAIQueue.Arn
+        -  
+          PolicyName: "WritetoDDB"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "dynamodb:BatchWriteItem"
+                  - "dynamodb:PutItem"
+                Resource: !GetAtt AVAIDDBTable.Arn
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonRekognitionFullAccess
+        - arn:aws:iam::aws:policy/ComprehendFullAccess
+        - arn:aws:iam::aws:policy/ComprehendMedicalFullAccess
+        - arn:aws:iam::aws:policy/AmazonTextractFullAccess
+        - arn:aws:iam::aws:policy/AmazonTranscribeFullAccess
+
+  AVAIPopulateESRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -  
+            Effect: "Allow"
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+              - dynamodb.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - 
+          PolicyName: "WriteToES"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: "es:*"
+                Resource: !GetAtt AVAIESDomain.Arn
+        - 
+          PolicyName: "AccessDDBStream"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "dynamodb:GetRecords"
+                  - "dynamodb:GetShardIterator"
+                  - "dynamodb:DescribeStream"
+                  - "dynamodb:ListStreams"
+                Resource: !GetAtt AVAIDDBTable.StreamArn
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+
+  AVAIPoller:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: AVAIPoller.lambda_handler
+      Description: "Lambda function to poll Veeva api to pull in documents"
+      Runtime: python3.8
+      Role: !GetAtt AVAIPollerRole.Arn
+      MemorySize: 1024
+      Timeout: 180
+      CodeUri: s3://mayank-aws-blog-code/veeva-aws-ai/AVAIPoller.zip
+      Layers:
+        - !Ref AVAILambdaLayer
+      Environment:
+          Variables: 
+            
+            VEEVA_DOMAIN_NAME: !Ref VeevaDomainNameParameter
+            VEEVA_DOMAIN_USERNAME: !Ref VeevaDomainUserNameParameter
+            VEEVA_DOMAIN_PASSWORD: !Ref VeevaDomainPasswordParameter
+            BUCKETNAME: !Ref AVAIBucket
+            QUEUE_NAME: !GetAtt AVAIQueue.QueueName
+
+  AVAIQueuePoller:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: AVAIQueuePoller.lambda_handler
+      Description: "Lambda function to poll SQS Queue and process"
+      Runtime: python3.8
+      Role: !GetAtt AVAIQueuePollerRole.Arn
+      MemorySize: 1024
+      Timeout: 300
+      Layers:
+        - !Ref AVAILambdaLayer
+      CodeUri: s3://mayank-aws-blog-code/veeva-aws-ai/AVAIQueuePoller.zip
+      Environment:
+          Variables: 
+            DDB_TABLE: !Ref AVAIDDBTable
+            BUCKETNAME: !Ref AVAIBucket
+            QUEUE_NAME: !GetAtt AVAIQueue.QueueName
+
+  AVAIPopulateES:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: AVAIPopulateES.lambda_handler
+      Description: "Lambda function to read DDB stream and populate ES"
+      Runtime: python3.8
+      Role: !GetAtt AVAIPopulateESRole.Arn
+      MemorySize: 512
+      Timeout: 180
+      Layers:
+        - !Ref AVAILambdaLayer
+      CodeUri: s3://mayank-aws-blog-code/veeva-aws-ai/AVAIPopulateES.zip
+      Environment:
+          Variables: 
+            ES_DOMAIN: !GetAtt AVAIESDomain.DomainEndpoint
+
+  AVAILambdaLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: MyLayer
+      Description: Layer description
+      ContentUri: s3://mayank-aws-blog-code/veeva-aws-ai/lib.zip
+      CompatibleRuntimes:
+        - python3.8
+      LicenseInfo: 'Available under the Apache 2.0 license.'
+      RetentionPolicy: Retain
+
+  
+  AVAIDDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 10
+        WriteCapacityUnits: 10
+      AttributeDefinitions: 
+        - 
+          AttributeName: "ROWID"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "ROWID"
+          KeyType: "HASH"
+      StreamSpecification: 
+        StreamViewType: NEW_IMAGE 
+
+  AVAIESDomain:
+    Type: AWS::Elasticsearch::Domain
+    Properties:
+      ElasticsearchClusterConfig:
+        DedicatedMasterEnabled: "false"
+        InstanceCount: "1"
+        ZoneAwarenessEnabled: "false"
+        InstanceType: "r5.large.elasticsearch"
+        # DedicatedMasterType: "r5.large.elasticsearch"
+        # DedicatedMasterCount: "2"
+      ElasticsearchVersion: "7.4"
+      EBSOptions:
+        EBSEnabled: true
+        Iops: 0
+        VolumeSize: 10
+        VolumeType: "gp2"
+      AccessPolicies:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              AWS: "*"
+            Action: "es:*"
+            Resource: "arn:aws:es:us-east-1:1234567890:domain/test/*"
+            # Resource: !Sub 
+            #   - "arn:aws:es:{{AWS::Region}}:{{AWS::AccountId}}:domain/${domain}/*"
+            #   - { domain : !Ref AVAIESDomain}
+
+
+  AVAIQueue:
+    Type: AWS::SQS::Queue
+    Properties: 
+      ReceiveMessageWaitTimeSeconds: 5
+      VisibilityTimeout: 120
+      FifoQueue: True
+
+  AVAIEventSourceMapping: 
+    Type: AWS::Lambda::EventSourceMapping
+    Properties: 
+      EventSourceArn: !GetAtt AVAIDDBTable.StreamArn
+      FunctionName: !GetAtt AVAIPopulateES.Arn
+      StartingPosition: "TRIM_HORIZON"
+  
+  AVAIPollerSchedule:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Event Rule to call AVAIVeevaPoller every 5 mins"
+      ScheduleExpression: "cron(0/5 * * * ? *)"
+      State: ENABLED
+      Targets: 
+        - Arn: !GetAtt AVAIPoller.Arn
+          Id: "Id123"
+
+  AVAIPollerSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt AVAIPoller.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AVAIPollerSchedule.Arn
+
+
+  AVAIQueuePollerSchedule:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Event Rule to call AVAIQueuePoller every 5 mins"
+      ScheduleExpression: "cron(0/1 * * * ? *)"
+      State: ENABLED
+      Targets: 
+        - Arn: !GetAtt AVAIQueuePoller.Arn
+          Id: "Id124"
+
+  AVAIQueuePollerSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt AVAIQueuePoller.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AVAIQueuePollerSchedule.Arn
+    
+
+    

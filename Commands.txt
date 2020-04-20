@@ -1,0 +1,3 @@
+aws cloudformation package --template-file CF_Template.yaml --output-template-file CF_Template_output.yaml --s3-bucket avai_cf-2020-us-east-1 --region us-east-1
+
+aws cloudformation deploy  --template-file CF_Template_output.yaml --capabilities CAPABILITY_IAM  --region us-east-1  --stack-name Veeva-AWS-AI 
