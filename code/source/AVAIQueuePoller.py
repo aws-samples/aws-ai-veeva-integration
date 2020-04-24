@@ -55,7 +55,7 @@ def lambda_handler(event, context):
         MessageAttributeNames=[
             'All'
         ],
-        VisibilityTimeout=180,
+        VisibilityTimeout=90,
         WaitTimeSeconds=3
     )
     
@@ -66,29 +66,33 @@ def lambda_handler(event, context):
             
             messageBody = json.loads(message['Body'])
             
-            if (messageBody['keyName'].lower().endswith('.jpg') 
-                    or messageBody['keyName'].lower().endswith('.jpeg') 
-                    or messageBody['keyName'].lower().endswith('.png')):
-                # Process the image.
-                process_image(messageBody)
-                
-            if (messageBody['keyName'].lower().endswith('.txt')):
-                print("Processing Document: {0}/{1}".format(messageBody['bucketName'], messageBody['keyName']))
-                #get the S3 object
-                bucket = s3.Bucket(messageBody['bucketName'])
-                fileText = bucket.Object(messageBody['keyName']).get()['Body'].read().decode("utf-8", 'ignore')
-                # Process the document.
-                process_document(messageBody['bucketName'], messageBody['keyName'], fileText, 'Text-file')
+            try:
 
-            if (messageBody['keyName'].lower().endswith('.pdf')):
-                process_pdf(messageBody)
+                if (messageBody['keyName'].lower().endswith('.jpg') 
+                        or messageBody['keyName'].lower().endswith('.jpeg') 
+                        or messageBody['keyName'].lower().endswith('.png')):
+                    # Process the image.
+                    process_image(messageBody)
+                    
+                if (messageBody['keyName'].lower().endswith('.txt')):
+                    print("Processing Document: {0}/{1}".format(messageBody['bucketName'], messageBody['keyName']))
+                    #get the S3 object
+                    bucket = s3.Bucket(messageBody['bucketName'])
+                    fileText = bucket.Object(messageBody['keyName']).get()['Body'].read().decode("utf-8", 'ignore')
+                    # Process the document.
+                    process_document(messageBody['bucketName'], messageBody['keyName'], fileText, 'Text-file')
 
-            if (messageBody['keyName'].lower().endswith('.mp3') 
-                or messageBody['keyName'].lower().endswith('.mp4') 
-                or messageBody['keyName'].lower().endswith('.flac') 
-                or messageBody['keyName'].lower().endswith('.wav')):
-                process_audio(messageBody)
-            
+                if (messageBody['keyName'].lower().endswith('.pdf')):
+                    process_pdf(messageBody)
+
+                if (messageBody['keyName'].lower().endswith('.mp3') 
+                    or messageBody['keyName'].lower().endswith('.mp4') 
+                    or messageBody['keyName'].lower().endswith('.flac') 
+                    or messageBody['keyName'].lower().endswith('.wav')):
+                    process_audio(messageBody)
+            except:
+                print("Something went wrong processing " + str(messageBody['keyName']))
+
             # Delete received message from queue
             sqs.delete_message(
                 QueueUrl=queue_url,
