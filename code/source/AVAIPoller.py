@@ -80,28 +80,28 @@ def lambda_handler(event, context):
         # print(json.dumps(veeva_Docs))
         if (veeva_Docs['responseStatus'] == 'SUCCESS'):
             for document in veeva_Docs['data']:
-                if (document['format__v'] == 'image/jpeg' or document['format__v'] == 'image/png'or  document['format__v'] == 'application/pdf'):
+                if (document['format__v'] == 'image/jpeg' or document['format__v'] == 'image/png' or  document['format__v'] == 'application/pdf' or  document['format__v'] == 'audio/mp3'):
                     filename = document['filename__v']
                     print(('Downloading {0}').format(filename))
                     docImageUrl = ('objects/documents/{0}/versions/{1}/{2}/file').format(document['id'],document['major_version_number__v'],document['minor_version_number__v'])
                     veeva_Doc = requests.get(dataUrl+docImageUrl, headers=authHeader)
-                    # open(os.path.join('Veeva_Docs/' + filename), 'wb').write(veeva_Doc.content)
+                    if (veeva_Doc.headers['Content-Type'] == 'application/octet-stream;charset=UTF-8'):
+                        # copy image to S3
+                        # copy image to S3
+                        keyName = 'input/' + filename
+                        response = s3.put_object(Bucket = bucketName, Key = keyName, Body = veeva_Doc.content)
+                        # print('Success')
+                        # put a message in SQS
+                        # Create a new message
+                        message = {}
+                        message['fileType'] = 'png'  # can be png, jpg, pdf, mp3
+                        message['bucketName'] = bucketName
+                        message['keyName'] = keyName
 
-                    # copy image to S3
-                    keyName = 'input/' + filename
-                    response = s3.put_object(Bucket = bucketName, Key = keyName, Body = veeva_Doc.content)
-
-                    # put a message in SQS
-                    # Create a new message
-                    message = {}
-                    message['fileType'] = 'png'  # can be png, jpg, pdf,
-                    message['bucketName'] = bucketName
-                    message['keyName'] = keyName
-
-                    print('sending message to queue ' + queueName)
-                    response = queue.send_message(MessageBody= json.dumps(message), MessageGroupId='messageGroup1', MessageDeduplicationId = str(uuid.uuid4()))
-                    
-
+                        print('sending message to queue ' + queueName)
+                        response = queue.send_message(MessageBody= json.dumps(message), MessageGroupId='messageGroup1', MessageDeduplicationId = str(uuid.uuid4()))
+                    else:
+                        print(veeva_Doc.json()['errors'][0]['message'])
         # print(veeva_Docs)
     else:
         print ('Authentication NOT Successful.')
