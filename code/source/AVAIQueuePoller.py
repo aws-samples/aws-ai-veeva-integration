@@ -32,10 +32,10 @@ textract = boto3.client('textract',region_name='us-east-1')
 transcribe = boto3.client('transcribe',region_name='us-east-1')
 s3 = boto3.resource('s3')
 
-# queueName = 'VSS_Incoming_Queue.fifo'
+
+# read the environment variables
 queueName = unquote_plus(os.environ['QUEUE_NAME'])
-    
-# ddb_table = 'mayank-sandstone-demo'
+
 ddb_table = unquote_plus(os.environ['DDB_TABLE'])
 
 table = dynamoDBResource.Table(ddb_table)
@@ -43,12 +43,12 @@ table = dynamoDBResource.Table(ddb_table)
 
 def lambda_handler(event, context):
 
-    
+    # get the queue URL
     queue_url = sqs.get_queue_url(
                             QueueName=queueName
                         )['QueueUrl']
     
-    # Receive message from SQS queue
+    # Receive messages from SQS queue
     response = sqs.receive_message(
         QueueUrl=queue_url,
         MaxNumberOfMessages=10,
@@ -67,7 +67,7 @@ def lambda_handler(event, context):
             messageBody = json.loads(message['Body'])
             
             try:
-
+                
                 if (messageBody['keyName'].lower().endswith('.jpg') 
                         or messageBody['keyName'].lower().endswith('.jpeg') 
                         or messageBody['keyName'].lower().endswith('.png')):
@@ -79,16 +79,18 @@ def lambda_handler(event, context):
                     #get the S3 object
                     bucket = s3.Bucket(messageBody['bucketName'])
                     fileText = bucket.Object(messageBody['keyName']).get()['Body'].read().decode("utf-8", 'ignore')
-                    # Process the document.
+                    # Process the text document.
                     process_document(messageBody['bucketName'], messageBody['keyName'], fileText, 'Text-file')
 
                 if (messageBody['keyName'].lower().endswith('.pdf')):
+                    # process PDF
                     process_pdf(messageBody)
 
                 if (messageBody['keyName'].lower().endswith('.mp3') 
                     or messageBody['keyName'].lower().endswith('.mp4') 
                     or messageBody['keyName'].lower().endswith('.flac') 
                     or messageBody['keyName'].lower().endswith('.wav')):
+                    # process Audio
                     process_audio(messageBody)
             except:
                 print("Something went wrong processing " + str(messageBody['keyName']))
@@ -115,6 +117,7 @@ def process_audio(messageBody):
 
         mediaFormat = keyName[keyName.rindex('.')+1:len(keyName)]
         transcriptionJobName = str(uuid.uuid4())
+        # start a async batch job for transcription
         response = transcribe.start_transcription_job(
                     TranscriptionJobName = transcriptionJobName,
                     LanguageCode = 'en-US',
@@ -126,6 +129,7 @@ def process_audio(messageBody):
                     )
 
         transcribeResponse = None
+        # Check the response in a loop to see if the job is done.
         while True:
             print('Calling get_transcription_job...')
             transcribeResponse = transcribe.get_transcription_job(
@@ -136,23 +140,24 @@ def process_audio(messageBody):
                 transcribeResponse['TranscriptionJob']['TranscriptionJobStatus'] != 'QUEUED'):
                 break
             time.sleep(3)
-        
+
+        # we have a status
         if transcribeResponse is not None:
             if transcribeResponse['TranscriptionJob']['TranscriptionJobStatus'] == 'COMPLETED':
                 print('Success')
+                # extract the KeyName from the TranscriptFileUri
                 s3location = transcribeResponse['TranscriptionJob']['Transcript']['TranscriptFileUri']
-                # print(s3location)
                 s3location = s3location.replace('https://s3.amazonaws.com/','')
                 print ('Text extracted from audio. Proceeding to extract clinical entities from the text...')
-                #get the S3 object
-                bucket = s3.Bucket(bucketName)
-                # print(s3location[s3location.index('/') + 1: len(s3location)])
                 targetKeyName = s3location[s3location.index('/') + 1: len(s3location)]
                 fileText = bucket.Object(targetKeyName).get()['Body'].read().decode("utf-8", 'ignore')
-                # print(json.loads(fileText)['results']['transcripts'][0]['transcript'])
                 # delete the transcribe output
                 print ('Deleting transcribe output')
+                #get the S3 object
+                bucket = s3.Bucket(bucketName)
                 bucket.Object(targetKeyName).delete()
+
+                # Use the extracted file text and process it using Comprehend Medical
                 process_document(bucketName, keyName, fileText, 'Audio-file')
             else:
                 print('Failure')
@@ -170,7 +175,8 @@ def process_pdf(messageBody):
         
         # call detect_document_text
         print('Calling detect_document_text')
-
+        
+        # start an async batch job to extract text from PDF
         response = textract.start_document_text_detection(
                     DocumentLocation={
                         'S3Object': {
@@ -180,13 +186,14 @@ def process_pdf(messageBody):
                     })
 
         textractResponse = None
+        # Check the response in a loop to see if the job is done.
         while True:
             print('Calling get_document_text_detection...')
             textractResponse = textract.get_document_text_detection(
                             JobId=response['JobId'],
                             MaxResults=1000
                         )
-            print(textractResponse['JobStatus'] )
+            # print(textractResponse['JobStatus'] )
             if textractResponse['JobStatus'] != 'IN_PROGRESS':
                 break
             time.sleep(2)
@@ -195,11 +202,14 @@ def process_pdf(messageBody):
             if textractResponse['JobStatus'] == 'SUCCEEDED':
                 print('Success')
                 textract_output = ''
+                # contactanate all the text blocks
                 for Blocks in textractResponse["Blocks"]:
                     if Blocks['BlockType']=='LINE':
                         line = Blocks['Text']
                         textract_output = textract_output + line +'\n'
                 print ('Text extracted from image. Proceeding to extract clinical entities from the text...')
+
+                # Use the extracted file text and process it using Comprehend Medical
                 process_document(messageBody['bucketName'], messageBody['keyName'],textract_output, 'PDF-file')
             else:
                 print('Failure')
@@ -216,7 +226,8 @@ def process_document(bucketName, keyName, fileText, assetType):
             assetType = 'Text-file'
 
         # comprehend medical has a input size limit of 20,000 characters.
-
+        # ideally, you should break it down in chunks of 20K characters and call them in a loop
+        # For this PoC, we will just consider the first 20K characters.
         if len(fileText) > 20000:
             fileText = fileText[0:20000]
 
@@ -236,7 +247,7 @@ def process_document(bucketName, keyName, fileText, assetType):
         Trait_List = []
         Attribute_List = []
 
-
+        # batch writer for dyanmodb is efficient way to write multiple items.
         with table.batch_writer() as batch:
             # Create a loop to iterate through the individual entities
             for row in testentities:
@@ -301,6 +312,7 @@ def process_image(messageBody):
         faceDetails = []
         bIfPerson = False
         
+        # batch writer for dyanmodb is efficient way to write multiple items.
         with table.batch_writer() as batch:
             for label in response['Labels']:
                 batch.put_item(
@@ -417,21 +429,8 @@ def process_image(messageBody):
                                     }
                                 )
                 # create data structure and insert in DDB
-                # textDetections = []
-                
-                
-                
                 for text in response['TextDetections']:
-                    if text['Type'] == 'LINE':
-                        
-                        # textDetections.append(text['DetectedText']+':'+str(text['Confidence']))
-                        
-                        # textDetections.append({
-                        #     'DetectedText' : text['DetectedText'],
-                        #     'Confidence' : text['Confidence']
-                        #         }
-                        # )
-                        
+                    if text['Type'] == 'LINE': 
                         batch.put_item(
                             Item={
                                 'ROWID': str(uuid.uuid4()),

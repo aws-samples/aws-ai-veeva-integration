@@ -23,33 +23,22 @@ import os
 my_session = boto3.session.Session()
 region = my_session.region_name
 
-#region = 'us-east-1'
+# variables that will be used in the code
 service = 'es'
 credentials = boto3.Session().get_credentials()
 awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, region, service, session_token=credentials.token)
-
-# host = 'https://search-mayank-sandstone-demo-ur4mhmhgsmkhwdjz4uzuwtrznu.us-east-1.es.amazonaws.com' # Replace with the elasticsearch host name 
 host =  'https://{0}'.format(unquote_plus(os.environ['ES_DOMAIN']))
-
-
 index = 'avai_index'
 type = '_doc'
 url = host + '/' + index + '/' + type + '/'
-
 headers = { "Content-Type": "application/json" }
 
 def lambda_handler(event, context):
-    # print(json.dumps(event))
     count = 0
     for record in event['Records']:
         # Get the primary key for use as the Elasticsearch ID
-        # id = record['dynamodb']['Keys']['BucketName']['S'] + '/' + record['dynamodb']['Keys']['KeyName']['S']
         id = record['dynamodb']['Keys']['ROWID']['S'] 
         
-        
-        
-        # print(id)
-
         if record['eventName'] == 'REMOVE':
             r = requests.delete(url + id, auth=awsauth)
         else:
