@@ -335,10 +335,11 @@ Resources:
     Properties: 
       Description: "Event Rule to call AVAIVeevaPoller every 5 mins"
       ScheduleExpression: "cron(0/5 * * * ? *)"
-      State: ENABLED
+      State: DISABLED
       Targets: 
         - Arn: !GetAtt AVAIPoller.Arn
           Id: "Id123"
+    DependsOn : AVAIESDomain
 
   AVAIPollerSchedulePermission:
     Type: AWS::Lambda::Permission
@@ -352,12 +353,13 @@ Resources:
   AVAIQueuePollerSchedule:
     Type: AWS::Events::Rule
     Properties: 
-      Description: "Event Rule to call AVAIQueuePoller every 5 mins"
+      Description: "Event Rule to call AVAIQueuePoller every 1 min"
       ScheduleExpression: "cron(0/1 * * * ? *)"
-      State: ENABLED
+      State: DISABLED
       Targets: 
         - Arn: !GetAtt AVAIQueuePoller.Arn
           Id: "Id124"
+    DependsOn : AVAIESDomain
 
   AVAIQueuePollerSchedulePermission:
     Type: AWS::Lambda::Permission
