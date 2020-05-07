@@ -213,7 +213,7 @@ Resources:
       Role: !GetAtt AVAIPollerRole.Arn
       MemorySize: 1024
       Timeout: 180
-      CodeUri: s3://mayank-aws-blog-code/veeva-aws-ai/AVAIPoller.zip
+      CodeUri: s3://aws-ml-blog/artifacts/aws-ai-veeva-integration/AVAIPoller.zip
       Layers:
         - !Ref AVAILambdaLayer
       Environment:
@@ -236,7 +236,7 @@ Resources:
       Timeout: 300
       Layers:
         - !Ref AVAILambdaLayer
-      CodeUri: s3://mayank-aws-blog-code/veeva-aws-ai/AVAIQueuePoller.zip
+      CodeUri: s3://aws-ml-blog/artifacts/aws-ai-veeva-integration/AVAIQueuePoller.zip
       Environment:
           Variables: 
             DDB_TABLE: !Ref AVAIDDBTable
@@ -254,7 +254,7 @@ Resources:
       Timeout: 180
       Layers:
         - !Ref AVAILambdaLayer
-      CodeUri: s3://mayank-aws-blog-code/veeva-aws-ai/AVAIPopulateES.zip
+      CodeUri: s3://aws-ml-blog/artifacts/aws-ai-veeva-integration/AVAIPopulateES.zip
       Environment:
           Variables: 
             ES_DOMAIN: !GetAtt AVAIESDomain.DomainEndpoint
@@ -264,7 +264,7 @@ Resources:
     Properties:
       LayerName: MyLayer
       Description: Layer description
-      ContentUri: s3://mayank-aws-blog-code/veeva-aws-ai/lib.zip
+      ContentUri: s3://aws-ml-blog/artifacts/aws-ai-veeva-integration/lib.zip
       CompatibleRuntimes:
         - python3.8
       LicenseInfo: 'Available under the Apache 2.0 license.'
@@ -312,10 +312,8 @@ Resources:
             Principal:
               AWS: "*"
             Action: "es:*"
-            Resource: "arn:aws:es:us-east-1:1234567890:domain/test/*"
-            # Resource: !Sub 
-            #   - "arn:aws:es:{{AWS::Region}}:{{AWS::AccountId}}:domain/${domain}/*"
-            #   - { domain : !Ref AVAIESDomain}
+            Resource: "arn:aws:es:us-east-1:1234567890:domain/test/*" # dummy account
+
 
 
   AVAIQueue:
