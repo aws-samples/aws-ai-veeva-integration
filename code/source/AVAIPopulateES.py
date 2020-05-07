@@ -30,10 +30,52 @@ awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, region, servi
 host =  'https://{0}'.format(unquote_plus(os.environ['ES_DOMAIN']))
 index = 'avai_index'
 type = '_doc'
-url = host + '/' + index + '/' + type + '/'
+docurl = host + '/' + index + '/' + type + '/'
+indexurl = host+ '/' + index
 headers = { "Content-Type": "application/json" }
 
+index_body = {
+    "mappings": {
+      "properties": {
+        "ROWID": {
+            "type": "keyword"
+        },
+        "Location": {
+            "type": "keyword"
+        },
+        "AssetType": {
+            "type": "keyword"
+        },
+        "Operation": {
+            "type": "keyword"
+        },
+        "Tag": {
+            "type": "keyword"
+        },
+        "Confidence": {
+            "type": "float"
+        },
+        "Face_Id": {
+            "type": "integer"
+        },
+        "Value": {
+            "type": "keyword"
+        },
+        "TimeStamp": {
+            "type": "date"
+        }
+      }
+    }
+  }
+
 def lambda_handler(event, context):
+    
+    # Check if index exists
+    response = requests.get(indexurl, auth=awsauth, headers=headers)
+    if not response.ok:
+        # create index
+        response = requests.put(indexurl, auth=awsauth, json=index_body, headers=headers)
+    
     count = 0
     for record in event['Records']:
         # Get the primary key for use as the Elasticsearch ID
@@ -57,7 +99,7 @@ def lambda_handler(event, context):
                 item['Value'] = document['Value']['S']
             item['Location'] = document['Location']['S']
             # print(json.dumps(item))
-            r = requests.put(url + id, auth=awsauth, json=item, headers=headers)
+            r = requests.put(docurl + id, auth=awsauth, json=item, headers=headers)
         count += 1
         print(str(count) + ' records processed.')
     return str(count) + ' records processed.'
