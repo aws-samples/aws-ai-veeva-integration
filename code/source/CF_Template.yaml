@@ -155,13 +155,23 @@ Resources:
                   - "dynamodb:BatchWriteItem"
                   - "dynamodb:PutItem"
                 Resource: !GetAtt AVAIDDBTable.Arn
+        -  
+          PolicyName: "AccessAIServices"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "rekognition:DetectLabels"
+                  - "comprehendmedical:DetectEntities"
+                  - "textract.StartDocumentTextDetection"
+                  - "textract.GetDocumentTextDetection"
+                  - "transcribe:StartTranscriptionJob"
+                  - "transcribe:GetTranscriptionJob"
+                Resource: "*"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/AmazonRekognitionFullAccess
-        - arn:aws:iam::aws:policy/ComprehendFullAccess
-        - arn:aws:iam::aws:policy/ComprehendMedicalFullAccess
-        - arn:aws:iam::aws:policy/AmazonTextractFullAccess
-        - arn:aws:iam::aws:policy/AmazonTranscribeFullAccess
 
   AVAIPopulateESRole:
     Type: "AWS::IAM::Role"
