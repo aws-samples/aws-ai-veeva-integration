@@ -82,7 +82,7 @@ def lambda_handler(event, context):
         id = record['dynamodb']['Keys']['ROWID']['S'] 
         
         if record['eventName'] == 'REMOVE':
-            r = requests.delete(url + id, auth=awsauth)
+            r = requests.delete(docurl + id, auth=awsauth)
         else:
             document = record['dynamodb']['NewImage']
             # create index document
