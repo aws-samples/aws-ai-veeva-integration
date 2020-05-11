@@ -165,8 +165,8 @@ Resources:
                 Action: 
                   - "rekognition:DetectLabels"
                   - "comprehendmedical:DetectEntities"
-                  - "textract.StartDocumentTextDetection"
-                  - "textract.GetDocumentTextDetection"
+                  - "textract:StartDocumentTextDetection"
+                  - "textract:GetDocumentTextDetection"
                   - "transcribe:StartTranscriptionJob"
                   - "transcribe:GetTranscriptionJob"
                 Resource: "*"
@@ -378,6 +378,11 @@ Resources:
       FunctionName: !GetAtt AVAIQueuePoller.Arn
       Principal: events.amazonaws.com
       SourceArn: !GetAtt AVAIQueuePollerSchedule.Arn
+
+Outputs:
+  ESDomainAccessPrincipal:
+    Description: The IAM role of AVAIPopulateESRole role
+    Value: !GetAtt AVAIPopulateESRole.Arn
     
 
     
