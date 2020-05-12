@@ -384,5 +384,9 @@ Outputs:
     Description: The IAM role of AVAIPopulateESRole role
     Value: !GetAtt AVAIPopulateESRole.Arn
     
+  ESDomainEndPoint:
+    Description: The domain endpoint for ES cluster
+    Value: !GetAtt AVAIESDomain.DomainEndpoint
+    
 
     
