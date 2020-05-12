@@ -1,6 +1,47 @@
 # aws-ai-veeva-integation
 A integration between Veeva Vault and AWS, levaraging AWS AI services to intelligently analyze images, PDFs and audio assets.
+
+# Background
+
+This post demonstrates how you can use [Amazon AI services](https://aws.amazon.com/machine-learning/ai-services/) to quickly, reliably, and cost-efficiently analyze the rich content stored in Veeva Vault at scale. The post discusses the overall architecture, the steps to deploy a solution and dashboard, and a use case of asset metadata tagging. 
+
+# Overview of solution
+The following diagram illustrates the solution architecture. 
+
+![Solution Architecture](images/Solution-Architecture.png)
+
+Using the Veeva Vault APIs and the AVAIPoller AWS Lambda function, you set up an inward data flow for Veeva PromoMats, which allows you to get updates on Amazon Simple Storage Service (Amazon S3). These updates could be periodic, event-driven, or batched, depending on your need. The AVAIPoller function handles Veeva authentication and uses an Amazon CloudWatch time-based trigger (every 5 minutes) to periodically call Veeva Vault APIs to ingest data. You can change this frequency by modifying the AWS CloudFormation template provided in this post.
+
+The AVAIPoller function begins by getting all the data for the first run. After that, it just gets the Veeva Vault assets that have been created or modified since the last run.
+
+The function stores the incoming assets on Amazon S3 and inserts a message into an Amazon Simple Queue Service (Amazon SQS) queue. Using Amazon SQS provides a loose coupling between the producer and processor sections of the architecture and also allows you to deploy changes to the processor section without stopping the incoming updates.
+
+A second poller function (AVAIQueuePoller) reads the SQS queue at frequent intervals (every minute) and processes the incoming assets. Depending on the incoming message type, the solution uses various AWS AI services to derive insights from your data. Some examples include:
+
+* **Text files** – The function uses the `DetectEntities` operation of Amazon Comprehend Medical, a natural language processing (NLP) service that makes it easy to use ML to extract relevant medical information from unstructured text. This operation detects entities in categories like Anatomy, Medical_Condition, Medication, Protected_Health_Information, and Test_Treatment_Procedure. The resulting output is filtered for Protected_Health_Information, and the remaining information, along with confidence scores, is flattened and inserted into an Amazon DynamoDB table. This information is plotted on the Elasticsearch Kibana cluster. In real-world applications, you can also use the Amazon Comprehend Medical ICD-10-CM or RxNorm feature to link the detected information to medical ontologies so downstream healthcare applications can use it for further analysis. 
+* **Images** – The function uses the `DetectLabels` method of Amazon Rekognition to detect labels in the incoming image. These labels can act as tags to identify the rich information buried in your images. If labels like Human or Person are detected with a confidence score of more than 80%, the code uses the DetectFaces method to look for key facial features such as eyes, nose, and mouth to detect faces in the input image. Amazon Rekognition delivers all this information with an associated confidence score, which is flattened and stored in the DynamoDB table.
+* **Voice recordings** – For audio assets, the code uses the `StartTranscriptionJob` asynchronous method of Amazon Transcribe to transcribe the incoming audio to text, passing in a unique identifier as the TranscriptionJobName. The code assumes the audio language to be English (US), but you can modify it to tie to the information coming from Veeva Vault. The code calls the `GetTranscriptionJob` method, passing in the same unique identifier as the TranscriptionJobName in a loop, until the job is complete. Amazon Transcribe delivers the output file on an S3 bucket, which is read by the code and deleted. The code calls the text processing workflow (as discussed earlier) to extract entities from transcribed audio.
+* **Scanned documents (PDFs)** – A large percentage of life sciences assets are represented in PDFs—these could be anything from scientific journals and research papers to drug labels. Amazon Textract is a service that automatically extracts text and data from scanned documents. The code uses the `StartDocumentTextDetection` method to start an asynchronous job to detect text in the document. The code uses the JobId returned in the response to call `GetDocumentTextDetection` in a loop, until the job is complete. The output JSON structure contains lines and words of detected text, along with confidence scores for each element it identifies, so you can make informed decisions about how to use the results. The code processes the JSON structure to recreate the text blurb and calls the text processing workflow to extract entities from the text.
+
+A DynamoDB table stores all the processed data. The solution uses DynamoDB Streams and AWS Lambda triggers (AVAIPopulateES) to populate data into an Elasticsearch Kibana cluster. The AVAIPopulateES function is fired for every update, insert, and delete operation that happens in the DynamoDB table and inserts one corresponding record in the Elasticsearch index. You can visualize these records using Kibana.
+
+This solution offers a serverless, pay-as-you-go approach to process, tag, and enable comprehensive searches on your digital assets. Additionally, each managed component has high availability built in by automatic deployment across multiple Availability Zones. For Amazon Elasticsearch Service (Amazon ES), you can choose the three-AZ option to provide better availability for your domains.
+
 # Deployment and Execution
+
+You use the CloudFormation stack to deploy the solution. The stack creates all the necessary resources, including:
+
+* An S3 bucket to store the incoming assets.
+* An SQS FIFO queue to act as a loose coupling between the producer function (AVAIPoller) and the poller function (AVAIQueuePoller).
+* A DynamoDB table to store the output of Amazon AI services.
+* An Amazon ES Kibana (ELK) cluster to visualize the analyzed tags.
+* Required Lambda functions:
+    * **AVAIPoller** – Triggered every 5 minutes. Used for polling the Veeva Vault using the Veeva Query Language, ingesting assets to AWS, and pushing a message to the SQS queue.
+    * **AVAIQueuePoller** – Triggered every 1 minute. Used for polling the SQS queue, processing the assets using Amazon AI services, and populating the DynamoDB table.
+    * **AVAIPopulateES** – Triggered when there is an update, insert, or delete on the DynamoDB table. Used for capturing changes from DynamoDB and populating the ELK cluster.
+* The Amazon CloudWatch Events rules that trigger AVAIPoller and AVAIQueuePoller. These triggers are in the **DISABLED** state for now. 
+* Required IAM roles and policies for interacting AI services in a scoped-down manner.
+
 
 ## Prerequisites
 
