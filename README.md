@@ -77,7 +77,7 @@ This code depends on a bunch of libraries (not included in this distribution) wh
 7. If you want to make changes to the Lambda functions, you can do so on your local machine and redeploy them using the steps 5 through 6 above. The package and deploy commands take care of zipping up the new Lambda files (along with the dependencies) and uploading them to AWS for execution.
 
 ## Further Reading:
-1. Blogpost: [Analyze and tag assets stored in Veeva Vault using Amazon AI services](http://aws.amazon.com/)
+1. Blogpost: [Analyzing and tagging assets stored in Veeva Vault PromoMats using Amazon AI services](https://aws.amazon.com/blogs/machine-learning/analyzing-and-tagging-assets-stored-in-veeva-vault-promomats-using-amazon-ai-services/)
 
 ## License
 
